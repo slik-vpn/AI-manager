@@ -14,7 +14,8 @@ CREATE TABLE "User" (
 -- CreateTable
 CREATE TABLE "EventLog" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "level" TEXT NOT NULL DEFAULT 'INFO',
+    "type" TEXT NOT NULL,
+    "level" TEXT NOT NULL,
     "message" TEXT NOT NULL,
     "metadata" JSONB,
     "userId" INTEGER,
