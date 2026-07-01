@@ -16,6 +16,7 @@ export function roleBasedMenu(user: User): string {
     '/start_shift <shiftId> — отправить фото начала назначенной смены',
     '/ready_shift <shiftId> — отправить фото готовности площадки',
     '/end_shift <shiftId> — отправить фото конца смены',
+    '/report_shift <shiftId> — заполнить отчет после завершения смены',
   ];
 
   if (user.role === Role.MANAGER || user.role === Role.OWNER) {
@@ -31,6 +32,7 @@ export function roleBasedMenu(user: User): string {
       '/role <telegramId> manager|employee — изменить роль',
       '/shift_responses <shiftId> — отклики на смену',
       '/assign_shift <shiftId> <telegramId> — назначить сотрудника',
+      '/shift_report <shiftId> — посмотреть отчет по смене',
     );
   }
 

@@ -4,11 +4,20 @@ import { prisma } from './db.js';
 import type { BotContext } from './types.js';
 import { activeOnlyMessage, canAssignRoles, canManageUsers, findOrCreateUser, logEvent } from './users.js';
 import { roleBasedMenu } from './menu.js';
-import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto } from './shifts.js';
+import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto, createShiftReportAndClose, formatShiftReport, normalizeReportComment, parseGuestsCount, parseYesNo } from './shifts.js';
 
 type PendingShiftPhoto = {
   shiftId: number;
   type: ShiftPhotoType;
+};
+
+type PendingShiftReport = {
+  shiftId: number;
+  step: 'guestsCount' | 'hadProblems' | 'hadDamage' | 'hadConflict' | 'comment';
+  guestsCount?: number | null;
+  hadProblems?: boolean;
+  hadDamage?: boolean;
+  hadConflict?: boolean;
 };
 
 function formatUser(user: { telegramId: bigint; username: string | null; firstName: string | null; role: string; status: string }): string {
@@ -25,6 +34,7 @@ function telegramIdFromText(text: string): bigint | null {
 export function createBot(token: string): Telegraf<BotContext> {
   const bot = new Telegraf<BotContext>(token);
   const pendingShiftPhotos = new Map<number, PendingShiftPhoto>();
+  const pendingShiftReports = new Map<number, PendingShiftReport>();
 
   bot.use(async (ctx, next) => {
     if (ctx.from) {
@@ -222,6 +232,38 @@ export function createBot(token: string): Telegraf<BotContext> {
     await requestShiftPhoto(ctx, ctx.message.text, ShiftPhotoType.END);
   });
 
+  bot.command('report_shift', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+
+    const shiftId = shiftIdFromText(ctx.message.text);
+    if (!shiftId || !ctx.appUser) return ctx.reply('Использование: /report_shift <shiftId>');
+
+    const shift = await prisma.shift.findUnique({ where: { id: shiftId }, include: { report: true } });
+    if (!shift) return ctx.reply('Смена не найдена.');
+    if (shift.assignedUserId !== ctx.appUser.id) return ctx.reply('Отчет может заполнить только назначенный сотрудник.');
+    if (shift.status !== ShiftStatus.COMPLETED) return ctx.reply(`Отчет можно заполнить только после завершения смены. Текущий статус: ${shift.status}.`);
+    if (shift.report) return ctx.reply('Отчет по этой смене уже заполнен.');
+
+    pendingShiftReports.set(ctx.appUser.id, { shiftId, step: 'guestsCount' });
+    await ctx.reply('Отчет по смене начат. Вопрос 1/5: количество гостей? Отправьте число или "-", если неизвестно.');
+  });
+
+  bot.command('shift_report', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (ctx.appUser?.role !== Role.OWNER) return ctx.reply('Только OWNER может смотреть отчеты по сменам.');
+
+    const shiftId = shiftIdFromText(ctx.message.text);
+    if (!shiftId) return ctx.reply('Использование: /shift_report <shiftId>');
+
+    const report = await prisma.shiftReport.findUnique({ where: { shiftId }, include: { user: true } });
+    if (!report) return ctx.reply(`Отчет по смене #${shiftId} не найден.`);
+
+    await ctx.reply(formatShiftReport(report));
+  });
+
+
   bot.on('photo', async (ctx) => {
     const blocked = activeOnlyMessage(ctx.appUser);
     if (blocked) return ctx.reply(blocked);
@@ -285,6 +327,76 @@ export function createBot(token: string): Telegraf<BotContext> {
 
     pendingShiftPhotos.delete(ctx.appUser.id);
     await ctx.reply(shiftPhotoSavedMessage(pending.type, shift.id));
+  });
+
+
+  bot.on('text', async (ctx, next) => {
+    if (ctx.message.text.startsWith('/')) return next();
+
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const pending = pendingShiftReports.get(ctx.appUser.id);
+    if (!pending) return next();
+
+    if (pending.step === 'guestsCount') {
+      const guestsCount = parseGuestsCount(ctx.message.text);
+      if (guestsCount === undefined) return ctx.reply('Введите количество гостей целым числом 0 или больше, либо "-", если неизвестно.');
+      pendingShiftReports.set(ctx.appUser.id, { ...pending, guestsCount, step: 'hadProblems' });
+      return ctx.reply('Вопрос 2/5: были проблемы? Ответьте да/нет.');
+    }
+
+    if (pending.step === 'hadProblems') {
+      const hadProblems = parseYesNo(ctx.message.text);
+      if (hadProblems === null) return ctx.reply('Ответьте "да" или "нет": были проблемы?');
+      pendingShiftReports.set(ctx.appUser.id, { ...pending, hadProblems, step: 'hadDamage' });
+      return ctx.reply('Вопрос 3/5: были повреждения? Ответьте да/нет.');
+    }
+
+    if (pending.step === 'hadDamage') {
+      const hadDamage = parseYesNo(ctx.message.text);
+      if (hadDamage === null) return ctx.reply('Ответьте "да" или "нет": были повреждения?');
+      pendingShiftReports.set(ctx.appUser.id, { ...pending, hadDamage, step: 'hadConflict' });
+      return ctx.reply('Вопрос 4/5: был конфликт? Ответьте да/нет.');
+    }
+
+    if (pending.step === 'hadConflict') {
+      const hadConflict = parseYesNo(ctx.message.text);
+      if (hadConflict === null) return ctx.reply('Ответьте "да" или "нет": был конфликт?');
+      pendingShiftReports.set(ctx.appUser.id, { ...pending, hadConflict, step: 'comment' });
+      return ctx.reply('Вопрос 5/5: комментарий. Отправьте текст или "-", если комментария нет.');
+    }
+
+    const shift = await prisma.shift.findUnique({ where: { id: pending.shiftId }, include: { report: true } });
+    if (!shift) {
+      pendingShiftReports.delete(ctx.appUser.id);
+      return ctx.reply('Смена не найдена. Заполнение отчета отменено.');
+    }
+    if (shift.assignedUserId !== ctx.appUser.id) {
+      pendingShiftReports.delete(ctx.appUser.id);
+      return ctx.reply('Отчет отменен: смена назначена другому сотруднику.');
+    }
+    if (shift.status !== ShiftStatus.COMPLETED) {
+      pendingShiftReports.delete(ctx.appUser.id);
+      return ctx.reply(`Отчет отменен: смена сейчас в статусе ${shift.status}.`);
+    }
+    if (shift.report) {
+      pendingShiftReports.delete(ctx.appUser.id);
+      return ctx.reply('Отчет по этой смене уже заполнен.');
+    }
+
+    const { report } = await createShiftReportAndClose({
+      shiftId: pending.shiftId,
+      userId: ctx.appUser.id,
+      guestsCount: pending.guestsCount ?? null,
+      hadProblems: pending.hadProblems ?? false,
+      hadDamage: pending.hadDamage ?? false,
+      hadConflict: pending.hadConflict ?? false,
+      comment: normalizeReportComment(ctx.message.text),
+    });
+    pendingShiftReports.delete(ctx.appUser.id);
+    await ctx.reply([`Отчет по смене #${pending.shiftId} сохранен.`, `Смена переведена в статус ${ShiftStatus.CLOSED}.`, formatShiftReport({ ...report, user: ctx.appUser })].join('\n\n'));
   });
 
   bot.command('users', async (ctx) => {

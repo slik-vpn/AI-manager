@@ -21,6 +21,7 @@ model User {
   assignedShifts Shift[]
   shiftResponses ShiftResponse[]
   shiftPhotos    ShiftPhoto[]
+  shiftReports   ShiftReport[]
 }
 
 model EventLog {
@@ -45,6 +46,7 @@ model Shift {
   assignedUser   User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
   responses      ShiftResponse[]
   photos         ShiftPhoto[]
+  report         ShiftReport?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 }
@@ -71,4 +73,20 @@ model ShiftPhoto {
   shift          Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt      DateTime @default(now())
+}
+
+
+model ShiftReport {
+  id           Int      @id @default(autoincrement())
+  shiftId      Int      @unique
+  userId       Int
+  guestsCount  Int?
+  hadProblems  Boolean
+  hadDamage    Boolean
+  hadConflict  Boolean
+  comment      String?
+  shift        Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

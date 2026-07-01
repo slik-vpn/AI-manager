@@ -164,3 +164,87 @@ export async function assignShift(shift: Shift, employee: User, actor: User): Pr
   });
   return updated;
 }
+
+export type ShiftReportInput = {
+  shiftId: number;
+  userId: number;
+  guestsCount: number | null;
+  hadProblems: boolean;
+  hadDamage: boolean;
+  hadConflict: boolean;
+  comment: string | null;
+};
+
+export function parseGuestsCount(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === '-' || trimmed.toLowerCase() === 'нет') return null;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+export function parseYesNo(text: string): boolean | null {
+  const normalized = text.trim().toLowerCase();
+  if (['да', 'д', 'yes', 'y'].includes(normalized)) return true;
+  if (['нет', 'н', 'no', 'n'].includes(normalized)) return false;
+  return null;
+}
+
+export function normalizeReportComment(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed === '-' || trimmed.toLowerCase() === 'нет') return null;
+  return trimmed;
+}
+
+export async function createShiftReportAndClose(input: ShiftReportInput) {
+  return prisma.$transaction(async (tx) => {
+    const report = await tx.shiftReport.create({
+      data: {
+        shiftId: input.shiftId,
+        userId: input.userId,
+        guestsCount: input.guestsCount,
+        hadProblems: input.hadProblems,
+        hadDamage: input.hadDamage,
+        hadConflict: input.hadConflict,
+        comment: input.comment,
+      },
+    });
+    const shift = await tx.shift.update({
+      where: { id: input.shiftId },
+      data: { status: ShiftStatus.CLOSED },
+    });
+    await tx.eventLog.create({
+      data: {
+        type: EventType.SHIFT_REPORT_CREATED,
+        level: EventLevel.INFO,
+        message: `Shift report ${report.id} created for shift ${input.shiftId}`,
+        userId: input.userId,
+        metadata: { shiftId: input.shiftId, reportId: report.id },
+      },
+    });
+    await tx.eventLog.create({
+      data: {
+        type: EventType.SHIFT_CLOSED,
+        level: EventLevel.INFO,
+        message: `Shift ${input.shiftId} closed after report`,
+        userId: input.userId,
+        metadata: { shiftId: input.shiftId, reportId: report.id },
+      },
+    });
+    return { report, shift };
+  });
+}
+
+export function formatShiftReport(report: { id: number; shiftId: number; user: User; guestsCount: number | null; hadProblems: boolean; hadDamage: boolean; hadConflict: boolean; comment: string | null; createdAt: Date }): string {
+  const name = report.user.username ? `@${report.user.username}` : report.user.firstName ?? 'без имени';
+  const yesNo = (value: boolean) => (value ? 'да' : 'нет');
+  return [
+    `Отчет по смене #${report.shiftId} (отчет #${report.id})`,
+    `Сотрудник: ${report.user.telegramId.toString()} — ${name}`,
+    `Количество гостей: ${report.guestsCount ?? 'не указано'}`,
+    `Были проблемы: ${yesNo(report.hadProblems)}`,
+    `Были повреждения: ${yesNo(report.hadDamage)}`,
+    `Был конфликт: ${yesNo(report.hadConflict)}`,
+    `Комментарий: ${report.comment ?? 'нет'}`,
+    `Создан: ${formatDate(report.createdAt)} ${formatTime(report.createdAt)}`,
+  ].join('\n');
+}
