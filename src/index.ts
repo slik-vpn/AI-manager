@@ -26,7 +26,7 @@ main()
       type: EventType.BOT_ERROR,
       level: EventLevel.ALERT,
       message: error instanceof Error ? error.message : 'Unknown bot error',
-      metadata: { error: String(error) },
+      metadata: { error: String(error) } as never,
     }).catch((logError: unknown) => console.error('Failed to log bot error', logError));
     process.exitCode = 1;
   });

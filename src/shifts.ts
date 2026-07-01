@@ -218,7 +218,7 @@ export async function createShiftReportAndClose(input: ShiftReportInput) {
         level: EventLevel.INFO,
         message: `Shift report ${report.id} created for shift ${input.shiftId}`,
         userId: input.userId,
-        metadata: { shiftId: input.shiftId, reportId: report.id },
+        metadata: { shiftId: input.shiftId, reportId: report.id } as never,
       },
     });
     await tx.eventLog.create({
@@ -227,7 +227,7 @@ export async function createShiftReportAndClose(input: ShiftReportInput) {
         level: EventLevel.INFO,
         message: `Shift ${input.shiftId} closed after report`,
         userId: input.userId,
-        metadata: { shiftId: input.shiftId, reportId: report.id },
+        metadata: { shiftId: input.shiftId, reportId: report.id } as never,
       },
     });
     return { report, shift };

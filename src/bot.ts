@@ -4,6 +4,7 @@ import { prisma } from './db.js';
 import type { BotContext } from './types.js';
 import { activeOnlyMessage, canAssignRoles, canManageUsers, findOrCreateUser, logEvent } from './users.js';
 import { roleBasedMenu } from './menu.js';
+import { formatMoney, formatPayrollEntry, markPayment, parseMarkPaidCommand, parseSetSalesCommand, syncPayrollEntries, upsertPayrollEntryForShift } from './payroll.js';
 import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto, createShiftReportAndClose, formatShiftReport, normalizeReportComment, parseGuestsCount, parseYesNo } from './shifts.js';
 
 type PendingShiftPhoto = {
@@ -263,6 +264,78 @@ export function createBot(token: string): Telegraf<BotContext> {
     await ctx.reply(formatShiftReport(report));
   });
 
+  bot.command('set_sales', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (ctx.appUser?.role !== Role.OWNER) return ctx.reply('Только OWNER может указывать продажи по сменам.');
+
+    const args = parseSetSalesCommand(ctx.message.text);
+    if (!args) return ctx.reply('Использование: /set_sales <shiftId> <amount>');
+
+    const shift = await prisma.shift.update({
+      where: { id: args.shiftId },
+      data: { salesAmount: args.amount },
+    }).catch(() => null);
+    if (!shift) return ctx.reply('Смена не найдена.');
+
+    if (shift.status === ShiftStatus.CLOSED && shift.assignedUserId) {
+      await upsertPayrollEntryForShift(shift);
+    }
+
+    await ctx.reply(`Продажи по смене #${shift.id} установлены: ${formatMoney(shift.salesAmount)}.`);
+  });
+
+  bot.command('payroll', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (ctx.appUser?.role !== Role.OWNER) return ctx.reply('Только OWNER может смотреть зарплаты всех сотрудников.');
+
+    await syncPayrollEntries();
+    const entries = await prisma.payrollEntry.findMany({
+      include: { user: true },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 100,
+    });
+    if (entries.length === 0) return ctx.reply('Начислений по закрытым сменам пока нет.');
+
+    const totalPending = entries.filter((entry) => entry.status !== 'PAID').reduce((sum, entry) => sum + entry.totalAmount, 0);
+    await ctx.reply(['Зарплаты сотрудников:', ...entries.map(formatPayrollEntry), `К выплате: ${formatMoney(totalPending)}`].join('\n'));
+  });
+
+  bot.command('my_payroll', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    await syncPayrollEntries(ctx.appUser.id);
+    const entries = await prisma.payrollEntry.findMany({
+      where: { userId: ctx.appUser.id },
+      include: { user: true },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 100,
+    });
+    if (entries.length === 0) return ctx.reply('У вас пока нет начислений по закрытым сменам.');
+
+    const totalPending = entries.filter((entry) => entry.status !== 'PAID').reduce((sum, entry) => sum + entry.totalAmount, 0);
+    await ctx.reply(['Моя зарплата:', ...entries.map(formatPayrollEntry), `К выплате: ${formatMoney(totalPending)}`].join('\n'));
+  });
+
+  bot.command('mark_paid', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (ctx.appUser?.role !== Role.OWNER) return ctx.reply('Только OWNER может отмечать выплаты.');
+
+    const args = parseMarkPaidCommand(ctx.message.text);
+    if (!args || !ctx.appUser) return ctx.reply('Использование: /mark_paid <telegramId> <amount>');
+
+    const user = await prisma.user.findUnique({ where: { telegramId: args.telegramId } });
+    if (!user) return ctx.reply('Пользователь не найден.');
+
+    await syncPayrollEntries(user.id);
+    const result = await markPayment({ user, amount: args.amount, actorId: ctx.appUser.id });
+    await ctx.reply(`Выплата #${result.paymentId} отмечена на сумму ${formatMoney(args.amount)} для ${user.telegramId.toString()}. Закрыто начислений: ${result.paidEntryIds.length}.`);
+  });
+
 
   bot.on('photo', async (ctx) => {
     const blocked = activeOnlyMessage(ctx.appUser);
@@ -311,7 +384,7 @@ export function createBot(token: string): Telegraf<BotContext> {
           level: EventLevel.INFO,
           message: `Photo ${pending.type} added for shift ${shift.id}`,
           userId: ctx.appUser!.id,
-          metadata: { shiftId: shift.id, photoType: pending.type, telegramFileId: photo.file_id },
+          metadata: { shiftId: shift.id, photoType: pending.type, telegramFileId: photo.file_id } as never,
         },
       });
       await tx.eventLog.create({
@@ -320,7 +393,7 @@ export function createBot(token: string): Telegraf<BotContext> {
           level: EventLevel.INFO,
           message: `Shift ${shift.id} status changed to ${statusAfterPhoto(pending.type)}`,
           userId: ctx.appUser!.id,
-          metadata: { shiftId: shift.id, photoType: pending.type },
+          metadata: { shiftId: shift.id, photoType: pending.type } as never,
         },
       });
     });
@@ -386,7 +459,7 @@ export function createBot(token: string): Telegraf<BotContext> {
       return ctx.reply('Отчет по этой смене уже заполнен.');
     }
 
-    const { report } = await createShiftReportAndClose({
+    const { report, shift: closedShift } = await createShiftReportAndClose({
       shiftId: pending.shiftId,
       userId: ctx.appUser.id,
       guestsCount: pending.guestsCount ?? null,
@@ -395,6 +468,7 @@ export function createBot(token: string): Telegraf<BotContext> {
       hadConflict: pending.hadConflict ?? false,
       comment: normalizeReportComment(ctx.message.text),
     });
+    await upsertPayrollEntryForShift(closedShift);
     pendingShiftReports.delete(ctx.appUser.id);
     await ctx.reply([`Отчет по смене #${pending.shiftId} сохранен.`, `Смена переведена в статус ${ShiftStatus.CLOSED}.`, formatShiftReport({ ...report, user: ctx.appUser })].join('\n\n'));
   });

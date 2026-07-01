@@ -22,6 +22,8 @@ model User {
   shiftResponses ShiftResponse[]
   shiftPhotos    ShiftPhoto[]
   shiftReports   ShiftReport[]
+  payrollEntries PayrollEntry[]
+  payments       Payment[]
 }
 
 model EventLog {
@@ -42,13 +44,38 @@ model Shift {
   startsAt       DateTime
   endsAt         DateTime
   status         String
+  salesAmount    Float           @default(0)
   assignedUserId Int?
   assignedUser   User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
   responses      ShiftResponse[]
   photos         ShiftPhoto[]
   report         ShiftReport?
+  payrollEntry   PayrollEntry?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+}
+
+model PayrollEntry {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  shiftId     Int      @unique
+  baseAmount  Float
+  salesAmount Float
+  bonusAmount Float
+  totalAmount Float
+  status      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shift       Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  amount    Float
+  comment   String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }
 
 model ShiftResponse {
