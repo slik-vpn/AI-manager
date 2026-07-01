@@ -20,6 +20,7 @@ model User {
   events         EventLog[]
   assignedShifts Shift[]
   shiftResponses ShiftResponse[]
+  shiftPhotos    ShiftPhoto[]
 }
 
 model EventLog {
@@ -43,6 +44,7 @@ model Shift {
   assignedUserId Int?
   assignedUser   User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
   responses      ShiftResponse[]
+  photos         ShiftPhoto[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 }
@@ -57,4 +59,16 @@ model ShiftResponse {
   createdAt DateTime @default(now())
 
   @@unique([shiftId, userId])
+}
+
+model ShiftPhoto {
+  id             Int      @id @default(autoincrement())
+  shiftId        Int
+  userId         Int
+  type           String
+  telegramFileId String
+  caption        String?
+  shift          Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
 }

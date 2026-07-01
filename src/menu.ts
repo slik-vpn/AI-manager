@@ -13,6 +13,9 @@ export function roleBasedMenu(user: User): string {
     '/my_shifts — мои назначенные смены',
     '/take_shift <shiftId> — откликнуться на смену',
     '/decline_shift <shiftId> — отказаться от смены',
+    '/start_shift <shiftId> — отправить фото начала назначенной смены',
+    '/ready_shift <shiftId> — отправить фото готовности площадки',
+    '/end_shift <shiftId> — отправить фото конца смены',
   ];
 
   if (user.role === Role.MANAGER || user.role === Role.OWNER) {

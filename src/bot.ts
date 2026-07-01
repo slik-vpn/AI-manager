@@ -1,10 +1,15 @@
 import { Telegraf } from 'telegraf';
-import { EventLevel, EventType, Role, ShiftResponseType, ShiftStatus, UserStatus } from './domain.js';
+import { EventLevel, EventType, Role, ShiftPhotoType, ShiftResponseType, ShiftStatus, UserStatus } from './domain.js';
 import { prisma } from './db.js';
 import type { BotContext } from './types.js';
 import { activeOnlyMessage, canAssignRoles, canManageUsers, findOrCreateUser, logEvent } from './users.js';
 import { roleBasedMenu } from './menu.js';
-import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, startOfCurrentWeek } from './shifts.js';
+import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto } from './shifts.js';
+
+type PendingShiftPhoto = {
+  shiftId: number;
+  type: ShiftPhotoType;
+};
 
 function formatUser(user: { telegramId: bigint; username: string | null; firstName: string | null; role: string; status: string }): string {
   const name = user.username ? `@${user.username}` : user.firstName ?? 'без имени';
@@ -19,6 +24,7 @@ function telegramIdFromText(text: string): bigint | null {
 
 export function createBot(token: string): Telegraf<BotContext> {
   const bot = new Telegraf<BotContext>(token);
+  const pendingShiftPhotos = new Map<number, PendingShiftPhoto>();
 
   bot.use(async (ctx, next) => {
     if (ctx.from) {
@@ -169,6 +175,116 @@ export function createBot(token: string): Telegraf<BotContext> {
 
     const updated = await assignShift(shift, employee, ctx.appUser);
     await ctx.reply(`Смена #${updated.id} назначена пользователю ${employee.telegramId.toString()}.`);
+  });
+
+  async function requestShiftPhoto(ctx: BotContext, text: string, type: ShiftPhotoType): Promise<void> {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) {
+      await ctx.reply(blocked);
+      return;
+    }
+
+    const shiftId = shiftIdFromText(text);
+    if (!shiftId || !ctx.appUser) {
+      await ctx.reply('Использование: /start_shift <shiftId>, /ready_shift <shiftId> или /end_shift <shiftId>');
+      return;
+    }
+
+    const shift = await prisma.shift.findUnique({ where: { id: shiftId } });
+    if (!shift) {
+      await ctx.reply('Смена не найдена.');
+      return;
+    }
+    if (shift.assignedUserId !== ctx.appUser.id) {
+      await ctx.reply('Эта смена назначена другому сотруднику.');
+      return;
+    }
+
+    const allowedStatuses = expectedStatusBeforePhoto(type);
+    if (!allowedStatuses.includes(shift.status as ShiftStatus)) {
+      await ctx.reply(`Нельзя выполнить действие для смены в статусе ${shift.status}.`);
+      return;
+    }
+
+    pendingShiftPhotos.set(ctx.appUser.id, { shiftId, type });
+    await ctx.reply(shiftPhotoPrompt(type, shiftId));
+  }
+
+  bot.command('start_shift', async (ctx) => {
+    await requestShiftPhoto(ctx, ctx.message.text, ShiftPhotoType.START);
+  });
+
+  bot.command('ready_shift', async (ctx) => {
+    await requestShiftPhoto(ctx, ctx.message.text, ShiftPhotoType.READY);
+  });
+
+  bot.command('end_shift', async (ctx) => {
+    await requestShiftPhoto(ctx, ctx.message.text, ShiftPhotoType.END);
+  });
+
+  bot.on('photo', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const pending = pendingShiftPhotos.get(ctx.appUser.id);
+    if (!pending) return ctx.reply('Фото получено, но нет активного запроса. Используйте /start_shift, /ready_shift или /end_shift.');
+
+    const shift = await prisma.shift.findUnique({ where: { id: pending.shiftId } });
+    if (!shift) {
+      pendingShiftPhotos.delete(ctx.appUser.id);
+      return ctx.reply('Смена не найдена. Запрос фото отменен.');
+    }
+    if (shift.assignedUserId !== ctx.appUser.id) {
+      pendingShiftPhotos.delete(ctx.appUser.id);
+      return ctx.reply('Эта смена назначена другому сотруднику. Фото не сохранено.');
+    }
+
+    const allowedStatuses = expectedStatusBeforePhoto(pending.type);
+    if (!allowedStatuses.includes(shift.status as ShiftStatus)) {
+      pendingShiftPhotos.delete(ctx.appUser.id);
+      return ctx.reply(`Фото не сохранено: смена сейчас в статусе ${shift.status}.`);
+    }
+
+    const photo = ctx.message.photo.at(-1);
+    if (!photo) return ctx.reply('Не удалось получить Telegram file_id фото. Отправьте фото еще раз.');
+
+    await prisma.$transaction(async (tx) => {
+      await tx.shiftPhoto.create({
+        data: {
+          shiftId: shift.id,
+          userId: ctx.appUser!.id,
+          type: pending.type,
+          telegramFileId: photo.file_id,
+          caption: ctx.message.caption,
+        },
+      });
+      await tx.shift.update({
+        where: { id: shift.id },
+        data: { status: statusAfterPhoto(pending.type) },
+      });
+      await tx.eventLog.create({
+        data: {
+          type: EventType.SHIFT_PHOTO_ADDED,
+          level: EventLevel.INFO,
+          message: `Photo ${pending.type} added for shift ${shift.id}`,
+          userId: ctx.appUser!.id,
+          metadata: { shiftId: shift.id, photoType: pending.type, telegramFileId: photo.file_id },
+        },
+      });
+      await tx.eventLog.create({
+        data: {
+          type: eventTypeAfterPhoto(pending.type),
+          level: EventLevel.INFO,
+          message: `Shift ${shift.id} status changed to ${statusAfterPhoto(pending.type)}`,
+          userId: ctx.appUser!.id,
+          metadata: { shiftId: shift.id, photoType: pending.type },
+        },
+      });
+    });
+
+    pendingShiftPhotos.delete(ctx.appUser.id);
+    await ctx.reply(shiftPhotoSavedMessage(pending.type, shift.id));
   });
 
   bot.command('users', async (ctx) => {

@@ -23,6 +23,7 @@ export enum ShiftStatus {
   WAITING_OWNER_CONFIRMATION = 'WAITING_OWNER_CONFIRMATION',
   ASSIGNED = 'ASSIGNED',
   STARTED = 'STARTED',
+  READY = 'READY',
   COMPLETED = 'COMPLETED',
   CLOSED = 'CLOSED',
   CANCELLED = 'CANCELLED',
@@ -31,6 +32,12 @@ export enum ShiftStatus {
 export enum ShiftResponseType {
   TAKE = 'TAKE',
   DECLINE = 'DECLINE',
+}
+
+export enum ShiftPhotoType {
+  START = 'START',
+  READY = 'READY',
+  END = 'END',
 }
 
 export enum EventType {
@@ -42,4 +49,8 @@ export enum EventType {
   SHIFT_CREATED = 'SHIFT_CREATED',
   SHIFT_RESPONSE_CREATED = 'SHIFT_RESPONSE_CREATED',
   SHIFT_ASSIGNED = 'SHIFT_ASSIGNED',
+  SHIFT_STARTED = 'SHIFT_STARTED',
+  SHIFT_READY = 'SHIFT_READY',
+  SHIFT_COMPLETED = 'SHIFT_COMPLETED',
+  SHIFT_PHOTO_ADDED = 'SHIFT_PHOTO_ADDED',
 }
