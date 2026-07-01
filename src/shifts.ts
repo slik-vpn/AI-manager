@@ -108,11 +108,15 @@ export async function createShift(input: { title: string; date: Date; startsAt: 
 }
 
 export async function createShiftResponse(shift: Shift, user: User, response: ShiftResponseType): Promise<ShiftResponse> {
-  const created = await prisma.shiftResponse.create({ data: { shiftId: shift.id, userId: user.id, response } });
+  const created = await prisma.shiftResponse.upsert({
+    where: { shiftId_userId: { shiftId: shift.id, userId: user.id } },
+    create: { shiftId: shift.id, userId: user.id, response },
+    update: { response },
+  });
   await logEvent({
     type: EventType.SHIFT_RESPONSE_CREATED,
     level: EventLevel.INFO,
-    message: `Shift response ${response} created for shift ${shift.id}`,
+    message: `Shift response ${response} saved for shift ${shift.id}`,
     userId: user.id,
     metadata: { shiftId: shift.id, response },
   });

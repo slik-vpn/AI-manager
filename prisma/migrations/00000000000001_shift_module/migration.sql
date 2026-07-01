@@ -22,3 +22,6 @@ CREATE TABLE "ShiftResponse" (
     CONSTRAINT "ShiftResponse_shiftId_fkey" FOREIGN KEY ("shiftId") REFERENCES "Shift" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "ShiftResponse_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ShiftResponse_shiftId_userId_key" ON "ShiftResponse"("shiftId", "userId");

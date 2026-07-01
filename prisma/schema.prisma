@@ -55,4 +55,6 @@ model ShiftResponse {
   shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+
+  @@unique([shiftId, userId])
 }
