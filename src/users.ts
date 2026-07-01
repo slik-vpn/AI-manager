@@ -60,7 +60,7 @@ export async function logEvent({ type, level, message, userId, metadata }: LogEv
       level,
       message,
       userId,
-      metadata: metadata === undefined ? undefined : JSON.parse(JSON.stringify(metadata)),
+      metadata: metadata === undefined ? undefined : JSON.stringify(metadata),
     },
   });
 }
