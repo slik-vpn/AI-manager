@@ -16,3 +16,11 @@ export enum EventLevel {
   ALERT = 'ALERT',
   FINANCE = 'FINANCE',
 }
+
+export enum EventType {
+  USER_REGISTERED = 'USER_REGISTERED',
+  USER_APPROVED = 'USER_APPROVED',
+  ROLE_CHANGED = 'ROLE_CHANGED',
+  BOT_STARTED = 'BOT_STARTED',
+  BOT_ERROR = 'BOT_ERROR',
+}

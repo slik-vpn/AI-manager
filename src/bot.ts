@@ -1,5 +1,5 @@
 import { Telegraf } from 'telegraf';
-import { EventLevel, Role, UserStatus } from './domain.js';
+import { EventLevel, EventType, Role, UserStatus } from './domain.js';
 import { prisma } from './db.js';
 import type { BotContext } from './types.js';
 import { activeOnlyMessage, canAssignRoles, canManageUsers, findOrCreateUser, logEvent } from './users.js';
@@ -76,7 +76,13 @@ export function createBot(token: string): Telegraf<BotContext> {
 
     if (!updated) return ctx.reply('Пользователь не найден. Сначала он должен нажать /start.');
 
-    await logEvent(EventLevel.INFO, `User ${updated.telegramId.toString()} approved`, ctx.appUser?.id, { targetUserId: updated.id });
+    await logEvent({
+      type: EventType.USER_APPROVED,
+      level: EventLevel.INFO,
+      message: `User ${updated.telegramId.toString()} approved`,
+      userId: ctx.appUser?.id,
+      metadata: { targetUserId: updated.id },
+    });
     await ctx.reply(`Пользователь ${updated.telegramId.toString()} подтвержден.`);
   });
 
@@ -98,7 +104,13 @@ export function createBot(token: string): Telegraf<BotContext> {
 
     if (!updated) return ctx.reply('Пользователь не найден. Сначала он должен нажать /start.');
 
-    await logEvent(EventLevel.WARNING, `Role for ${updated.telegramId.toString()} changed to ${role}`, ctx.appUser?.id, { targetUserId: updated.id });
+    await logEvent({
+      type: EventType.ROLE_CHANGED,
+      level: EventLevel.WARNING,
+      message: `Role for ${updated.telegramId.toString()} changed to ${role}`,
+      userId: ctx.appUser?.id,
+      metadata: { targetUserId: updated.id },
+    });
     await ctx.reply(`Роль пользователя ${updated.telegramId.toString()} изменена на ${role}.`);
   });
 

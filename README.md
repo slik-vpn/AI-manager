@@ -16,7 +16,8 @@ Foundation Telegram-бота для управления SLIK Place.
 - Роли пользователей: `OWNER`, `MANAGER`, `EMPLOYEE`.
 - Статусы пользователей: `PENDING`, `ACTIVE`, `ARCHIVED`.
 - Уровни событий: `INFO`, `WARNING`, `ALERT`, `FINANCE`.
-- Модели Prisma: `User`, `EventLog`.
+- Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`.
+- Модели Prisma: `User`, `EventLog` с обязательным `type`, `level`, `message`, `createdAt` и опциональными `metadata`, `userId`.
 - Команды Telegram:
   - `/start` — регистрация и меню по роли.
   - `/me` — профиль текущего пользователя.
@@ -42,7 +43,7 @@ DATABASE_URL="file:./data/dev.sqlite"
 OWNER_TELEGRAM_IDS=123456789
 ```
 
-`OWNER_TELEGRAM_IDS` поддерживает несколько ID через запятую.
+`OWNER_TELEGRAM_IDS` обязателен, должен содержать минимум один Telegram ID и поддерживает несколько ID через запятую. Каждый ID должен состоять только из цифр.
 
 ## Docker
 
