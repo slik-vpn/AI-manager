@@ -16,33 +16,46 @@ Foundation Telegram-бота для управления SLIK Place.
 - Роли пользователей: `OWNER`, `MANAGER`, `EMPLOYEE`.
 - Статусы пользователей: `PENDING`, `ACTIVE`, `ARCHIVED`.
 - Уровни событий: `INFO`, `WARNING`, `ALERT`, `FINANCE`.
-- Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`, `SHIFT_CREATED`, `SHIFT_RESPONSE_CREATED`, `SHIFT_ASSIGNED`.
-- Модели Prisma: `User`, `EventLog`, `Shift`, `ShiftResponse`.
+- Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`, `SHIFT_CREATED`, `SHIFT_RESPONSE_CREATED`, `SHIFT_ASSIGNED`, `SHIFT_STARTED`, `SHIFT_READY`, `SHIFT_COMPLETED`, `SHIFT_PHOTO_ADDED`.
+- Модели Prisma: `User`, `EventLog`, `Shift`, `ShiftResponse`, `ShiftPhoto`.
 - Команды Telegram:
   - `/start` — регистрация и меню по роли.
   - `/me` — профиль текущего пользователя.
   - `/users` — список пользователей для `OWNER` и `MANAGER`.
   - `/approve <telegramId>` — подтверждение пользователя для `OWNER` и `MANAGER`.
   - `/role <telegramId> manager|employee` — смена роли для `OWNER`.
-  - `/shifts` — доступные открытые смены текущей недели для сотрудников и менеджеров; `OWNER` видит открытые смены.
+  - `/shifts` — доступные открытые смены текущей недели для сотрудников и менеджеров; `OWNER` видит все смены со статусами.
   - `/my_shifts` — назначенные смены текущего пользователя.
   - `/create_shift YYYY-MM-DD HH:mm HH:mm Название смены` — ручное создание смены для `OWNER` и `MANAGER`.
   - `/take_shift <shiftId>` — отклик сотрудника `TAKE` на открытую смену.
   - `/decline_shift <shiftId>` — отклик сотрудника `DECLINE` на смену.
+  - `/start_shift <shiftId>` — запрос фото начала назначенной смены.
+  - `/ready_shift <shiftId>` — запрос фото готовности площадки.
+  - `/end_shift <shiftId>` — запрос фото конца смены.
   - `/shift_responses <shiftId>` — просмотр откликов на смену для `OWNER`.
   - `/assign_shift <shiftId> <telegramId>` — назначение активного сотрудника на смену для `OWNER`.
 
 ## Модуль смен
 
-Базовый модуль смен работает без интеграции с YClients, зарплат, фотоотчетов, задач и инцидентов. `OWNER` или `MANAGER` создают смену вручную командой:
+Базовый модуль смен работает без интеграции с YClients, зарплат, задач и инцидентов. `OWNER` или `MANAGER` создают смену вручную командой:
 
 ```text
 /create_shift 2026-07-05 18:00 23:00 Общий зал
 ```
 
-Новая смена получает статус `OPEN`. Сотрудники и менеджеры через `/shifts` видят только открытые доступные смены текущей календарной недели с понедельника по воскресенье, могут отправить отклик `TAKE` или `DECLINE`, а назначенные смены смотрят через `/my_shifts`. `OWNER` просматривает отклики через `/shift_responses <shiftId>` и назначает активного пользователя командой `/assign_shift <shiftId> <telegramId>`, после чего смена получает статус `ASSIGNED` и привязку `assignedUserId`.
+Новая смена получает статус `OPEN`. Сотрудники и менеджеры через `/shifts` видят только открытые доступные смены текущей календарной недели с понедельника по воскресенье, `OWNER` видит все смены со статусами. Сотрудники и менеджеры могут отправить отклик `TAKE` или `DECLINE`, а назначенные смены смотрят через `/my_shifts`. `OWNER` просматривает отклики через `/shift_responses <shiftId>` и назначает активного пользователя командой `/assign_shift <shiftId> <telegramId>`, после чего смена получает статус `ASSIGNED` и привязку `assignedUserId`.
 
-Статусы смен: `NEW`, `OPEN`, `WAITING_OWNER_CONFIRMATION`, `ASSIGNED`, `STARTED`, `COMPLETED`, `CLOSED`, `CANCELLED`. Типы откликов: `TAKE`, `DECLINE`.
+### Фото-контроль смен
+
+Фото-контроль доступен только назначенному сотруднику смены:
+
+1. `/start_shift <shiftId>` — бот просит отправить фото начала смены. До отправки фото статус смены не меняется. После фото сохраняется `telegramFileId`, создается `ShiftPhoto` с типом `START`, статус смены становится `STARTED`, а в `EventLog` пишутся `SHIFT_PHOTO_ADDED` и `SHIFT_STARTED`.
+2. `/ready_shift <shiftId>` — бот просит отправить фото готовности площадки. После фото сохраняется `ShiftPhoto` с типом `READY`, статус смены становится `READY`, а в `EventLog` пишутся `SHIFT_PHOTO_ADDED` и `SHIFT_READY`.
+3. `/end_shift <shiftId>` — бот просит отправить фото конца смены. До отправки фото смена не завершается. После фото сохраняется `ShiftPhoto` с типом `END`, статус смены становится `COMPLETED`, а в `EventLog` пишутся `SHIFT_PHOTO_ADDED` и `SHIFT_COMPLETED`.
+
+Сотрудник не может управлять чужой сменой: команды фото-контроля проверяют `assignedUserId`. `OWNER` видит текущий статус всех смен через `/shifts`.
+
+Статусы смен: `NEW`, `OPEN`, `WAITING_OWNER_CONFIRMATION`, `ASSIGNED`, `STARTED`, `READY`, `COMPLETED`, `CLOSED`, `CANCELLED`. Типы откликов: `TAKE`, `DECLINE`. Типы фото смены: `START`, `READY`, `END`.
 
 ## Быстрый старт
 

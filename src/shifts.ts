@@ -1,5 +1,5 @@
 import type { Shift, ShiftResponse, User } from '@prisma/client';
-import { EventLevel, EventType, Role, ShiftResponseType, ShiftStatus, UserStatus } from './domain.js';
+import { EventLevel, EventType, Role, ShiftPhotoType, ShiftResponseType, ShiftStatus, UserStatus } from './domain.js';
 import { prisma } from './db.js';
 import { logEvent } from './users.js';
 
@@ -71,6 +71,36 @@ export function assignShiftArgsFromText(text: string): { shiftId: number; telegr
 
 export function formatShift(shift: Shift): string {
   return [`#${shift.id} ${shift.title}`, `Дата: ${formatDate(shift.date)}`, `Время: ${formatTime(shift.startsAt)}–${formatTime(shift.endsAt)}`, `Статус: ${shift.status}`].join(' | ');
+}
+
+export function statusAfterPhoto(type: ShiftPhotoType): ShiftStatus {
+  if (type === ShiftPhotoType.START) return ShiftStatus.STARTED;
+  if (type === ShiftPhotoType.READY) return ShiftStatus.READY;
+  return ShiftStatus.COMPLETED;
+}
+
+export function eventTypeAfterPhoto(type: ShiftPhotoType): EventType {
+  if (type === ShiftPhotoType.START) return EventType.SHIFT_STARTED;
+  if (type === ShiftPhotoType.READY) return EventType.SHIFT_READY;
+  return EventType.SHIFT_COMPLETED;
+}
+
+export function expectedStatusBeforePhoto(type: ShiftPhotoType): ShiftStatus[] {
+  if (type === ShiftPhotoType.START) return [ShiftStatus.ASSIGNED];
+  if (type === ShiftPhotoType.READY) return [ShiftStatus.STARTED];
+  return [ShiftStatus.READY];
+}
+
+export function shiftPhotoPrompt(type: ShiftPhotoType, shiftId: number): string {
+  if (type === ShiftPhotoType.START) return `Отправьте фото начала смены #${shiftId}. Смена начнется только после фото.`;
+  if (type === ShiftPhotoType.READY) return `Отправьте фото готовности площадки для смены #${shiftId}.`;
+  return `Отправьте фото конца смены #${shiftId}. Смена завершится только после фото.`;
+}
+
+export function shiftPhotoSavedMessage(type: ShiftPhotoType, shiftId: number): string {
+  if (type === ShiftPhotoType.START) return `Фото начала смены #${shiftId} сохранено. Статус: ${ShiftStatus.STARTED}.`;
+  if (type === ShiftPhotoType.READY) return `Фото готовности смены #${shiftId} сохранено. Статус: ${ShiftStatus.READY}.`;
+  return `Фото конца смены #${shiftId} сохранено. Статус: ${ShiftStatus.COMPLETED}.`;
 }
 
 export function formatResponse(response: ShiftResponse & { user: User }): string {

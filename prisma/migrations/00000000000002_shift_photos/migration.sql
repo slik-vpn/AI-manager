@@ -1,0 +1,12 @@
+-- CreateTable
+CREATE TABLE "ShiftPhoto" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "shiftId" INTEGER NOT NULL,
+    "userId" INTEGER NOT NULL,
+    "type" TEXT NOT NULL,
+    "telegramFileId" TEXT NOT NULL,
+    "caption" TEXT,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "ShiftPhoto_shiftId_fkey" FOREIGN KEY ("shiftId") REFERENCES "Shift" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ShiftPhoto_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
