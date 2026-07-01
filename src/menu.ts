@@ -6,14 +6,29 @@ export function roleBasedMenu(user: User): string {
     return ['Доступные команды:', '/start — регистрация', '/me — мой профиль'].join('\n');
   }
 
-  const base = ['Доступные команды:', '/me — мой профиль'];
+  const base = [
+    'Доступные команды:',
+    '/me — мой профиль',
+    '/shifts — доступные смены текущей недели',
+    '/my_shifts — мои назначенные смены',
+    '/take_shift <shiftId> — откликнуться на смену',
+    '/decline_shift <shiftId> — отказаться от смены',
+  ];
 
   if (user.role === Role.MANAGER || user.role === Role.OWNER) {
-    base.push('/users — список пользователей', '/approve <telegramId> — подтвердить пользователя');
+    base.push(
+      '/users — список пользователей',
+      '/approve <telegramId> — подтвердить пользователя',
+      '/create_shift YYYY-MM-DD HH:mm HH:mm Название смены — создать смену',
+    );
   }
 
   if (user.role === Role.OWNER) {
-    base.push('/role <telegramId> manager|employee — изменить роль');
+    base.push(
+      '/role <telegramId> manager|employee — изменить роль',
+      '/shift_responses <shiftId> — отклики на смену',
+      '/assign_shift <shiftId> <telegramId> — назначить сотрудника',
+    );
   }
 
   return base.join('\n');

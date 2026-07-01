@@ -16,14 +16,33 @@ Foundation Telegram-бота для управления SLIK Place.
 - Роли пользователей: `OWNER`, `MANAGER`, `EMPLOYEE`.
 - Статусы пользователей: `PENDING`, `ACTIVE`, `ARCHIVED`.
 - Уровни событий: `INFO`, `WARNING`, `ALERT`, `FINANCE`.
-- Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`.
-- Модели Prisma: `User`, `EventLog` с обязательным `type`, `level`, `message`, `createdAt` и опциональными `metadata`, `userId`.
+- Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`, `SHIFT_CREATED`, `SHIFT_RESPONSE_CREATED`, `SHIFT_ASSIGNED`.
+- Модели Prisma: `User`, `EventLog`, `Shift`, `ShiftResponse`.
 - Команды Telegram:
   - `/start` — регистрация и меню по роли.
   - `/me` — профиль текущего пользователя.
   - `/users` — список пользователей для `OWNER` и `MANAGER`.
   - `/approve <telegramId>` — подтверждение пользователя для `OWNER` и `MANAGER`.
   - `/role <telegramId> manager|employee` — смена роли для `OWNER`.
+  - `/shifts` — доступные открытые смены текущей недели для сотрудников и менеджеров; `OWNER` видит открытые смены.
+  - `/my_shifts` — назначенные смены текущего пользователя.
+  - `/create_shift YYYY-MM-DD HH:mm HH:mm Название смены` — ручное создание смены для `OWNER` и `MANAGER`.
+  - `/take_shift <shiftId>` — отклик сотрудника `TAKE` на открытую смену.
+  - `/decline_shift <shiftId>` — отклик сотрудника `DECLINE` на смену.
+  - `/shift_responses <shiftId>` — просмотр откликов на смену для `OWNER`.
+  - `/assign_shift <shiftId> <telegramId>` — назначение активного сотрудника на смену для `OWNER`.
+
+## Модуль смен
+
+Базовый модуль смен работает без интеграции с YClients, зарплат, фотоотчетов, задач и инцидентов. `OWNER` или `MANAGER` создают смену вручную командой:
+
+```text
+/create_shift 2026-07-05 18:00 23:00 Общий зал
+```
+
+Новая смена получает статус `OPEN`. Сотрудники и менеджеры через `/shifts` видят только открытые доступные смены текущей календарной недели с понедельника по воскресенье, могут отправить отклик `TAKE` или `DECLINE`, а назначенные смены смотрят через `/my_shifts`. `OWNER` просматривает отклики через `/shift_responses <shiftId>` и назначает активного пользователя командой `/assign_shift <shiftId> <telegramId>`, после чего смена получает статус `ASSIGNED` и привязку `assignedUserId`.
+
+Статусы смен: `NEW`, `OPEN`, `WAITING_OWNER_CONFIRMATION`, `ASSIGNED`, `STARTED`, `COMPLETED`, `CLOSED`, `CANCELLED`. Типы откликов: `TAKE`, `DECLINE`.
 
 ## Быстрый старт
 
