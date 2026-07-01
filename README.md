@@ -16,8 +16,8 @@ Foundation Telegram-бота для управления SLIK Place.
 - Роли пользователей: `OWNER`, `MANAGER`, `EMPLOYEE`.
 - Статусы пользователей: `PENDING`, `ACTIVE`, `ARCHIVED`.
 - Уровни событий: `INFO`, `WARNING`, `ALERT`, `FINANCE`.
-- Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`, `SHIFT_CREATED`, `SHIFT_RESPONSE_CREATED`, `SHIFT_ASSIGNED`, `SHIFT_STARTED`, `SHIFT_READY`, `SHIFT_COMPLETED`, `SHIFT_PHOTO_ADDED`.
-- Модели Prisma: `User`, `EventLog`, `Shift`, `ShiftResponse`, `ShiftPhoto`.
+- Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`, `SHIFT_CREATED`, `SHIFT_RESPONSE_CREATED`, `SHIFT_ASSIGNED`, `SHIFT_STARTED`, `SHIFT_READY`, `SHIFT_COMPLETED`, `SHIFT_PHOTO_ADDED`, `SHIFT_REPORT_CREATED`, `SHIFT_CLOSED`.
+- Модели Prisma: `User`, `EventLog`, `Shift`, `ShiftResponse`, `ShiftPhoto`, `ShiftReport`.
 - Команды Telegram:
   - `/start` — регистрация и меню по роли.
   - `/me` — профиль текущего пользователя.
@@ -32,8 +32,10 @@ Foundation Telegram-бота для управления SLIK Place.
   - `/start_shift <shiftId>` — запрос фото начала назначенной смены.
   - `/ready_shift <shiftId>` — запрос фото готовности площадки.
   - `/end_shift <shiftId>` — запрос фото конца смены.
+  - `/report_shift <shiftId>` — заполнение отчета по мероприятию после завершения смены.
   - `/shift_responses <shiftId>` — просмотр откликов на смену для `OWNER`.
   - `/assign_shift <shiftId> <telegramId>` — назначение активного сотрудника на смену для `OWNER`.
+  - `/shift_report <shiftId>` — просмотр отчета по смене для `OWNER`.
 
 ## Модуль смен
 
@@ -53,7 +55,7 @@ Foundation Telegram-бота для управления SLIK Place.
 2. `/ready_shift <shiftId>` — бот просит отправить фото готовности площадки. После фото сохраняется `ShiftPhoto` с типом `READY`, статус смены становится `READY`, а в `EventLog` пишутся `SHIFT_PHOTO_ADDED` и `SHIFT_READY`.
 3. `/end_shift <shiftId>` — бот просит отправить фото конца смены. До отправки фото смена не завершается. После фото сохраняется `ShiftPhoto` с типом `END`, статус смены становится `COMPLETED`, а в `EventLog` пишутся `SHIFT_PHOTO_ADDED` и `SHIFT_COMPLETED`.
 
-Сотрудник не может управлять чужой сменой: команды фото-контроля проверяют `assignedUserId`. `OWNER` видит текущий статус всех смен через `/shifts`.
+Сотрудник не может управлять чужой сменой: команды фото-контроля проверяют `assignedUserId`. После статуса `COMPLETED` назначенный сотрудник заполняет отчет командой `/report_shift <shiftId>`: бот последовательно спрашивает количество гостей, были ли проблемы, повреждения и конфликт, затем комментарий. Без отчета смена остается `COMPLETED`; после сохранения `ShiftReport` смена становится `CLOSED`, а в `EventLog` пишутся `SHIFT_REPORT_CREATED` и `SHIFT_CLOSED`. `OWNER` смотрит отчет командой `/shift_report <shiftId>`. `OWNER` видит текущий статус всех смен через `/shifts`.
 
 Статусы смен: `NEW`, `OPEN`, `WAITING_OWNER_CONFIRMATION`, `ASSIGNED`, `STARTED`, `READY`, `COMPLETED`, `CLOSED`, `CANCELLED`. Типы откликов: `TAKE`, `DECLINE`. Типы фото смены: `START`, `READY`, `END`.
 
