@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int        @id @default(autoincrement())
+  telegramId BigInt     @unique
+  username   String?
+  firstName  String?
+  lastName   String?
+  role       String     @default("EMPLOYEE")
+  status     String     @default("PENDING")
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  events     EventLog[]
+}
+
+model EventLog {
+  id        Int      @id @default(autoincrement())
+  level     String   @default("INFO")
+  message   String
+  metadata  Json?
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+}

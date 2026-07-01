@@ -1,0 +1,38 @@
+{
+  "name": "ai-manager",
+  "version": "0.1.0",
+  "description": "Telegram bot foundation for AI Управляющий SLIK Place",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "telegram",
+    "telegraf",
+    "prisma",
+    "sqlite"
+  ],
+  "author": "SLIK Place",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "dotenv": "^16.4.7",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
