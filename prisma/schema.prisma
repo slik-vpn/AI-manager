@@ -8,16 +8,18 @@ datasource db {
 }
 
 model User {
-  id         Int        @id @default(autoincrement())
-  telegramId BigInt     @unique
-  username   String?
-  firstName  String?
-  lastName   String?
-  role       String     @default("EMPLOYEE")
-  status     String     @default("PENDING")
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  events     EventLog[]
+  id             Int             @id @default(autoincrement())
+  telegramId     BigInt          @unique
+  username       String?
+  firstName      String?
+  lastName       String?
+  role           String          @default("EMPLOYEE")
+  status         String          @default("PENDING")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  events         EventLog[]
+  assignedShifts Shift[]
+  shiftResponses ShiftResponse[]
 }
 
 model EventLog {
@@ -29,4 +31,30 @@ model EventLog {
   userId    Int?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())
+}
+
+model Shift {
+  id             Int             @id @default(autoincrement())
+  title          String
+  date           DateTime
+  startsAt       DateTime
+  endsAt         DateTime
+  status         String
+  assignedUserId Int?
+  assignedUser   User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  responses      ShiftResponse[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model ShiftResponse {
+  id        Int      @id @default(autoincrement())
+  shiftId   Int
+  userId    Int
+  response  String
+  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([shiftId, userId])
 }
