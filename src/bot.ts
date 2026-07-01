@@ -384,7 +384,7 @@ export function createBot(token: string): Telegraf<BotContext> {
           level: EventLevel.INFO,
           message: `Photo ${pending.type} added for shift ${shift.id}`,
           userId: ctx.appUser!.id,
-          metadata: JSON.stringify({ shiftId: shift.id, photoType: pending.type, telegramFileId: photo.file_id }),
+          metadata: { shiftId: shift.id, photoType: pending.type, telegramFileId: photo.file_id } as never,
         },
       });
       await tx.eventLog.create({
@@ -393,7 +393,7 @@ export function createBot(token: string): Telegraf<BotContext> {
           level: EventLevel.INFO,
           message: `Shift ${shift.id} status changed to ${statusAfterPhoto(pending.type)}`,
           userId: ctx.appUser!.id,
-          metadata: JSON.stringify({ shiftId: shift.id, photoType: pending.type }),
+          metadata: { shiftId: shift.id, photoType: pending.type } as never,
         },
       });
     });

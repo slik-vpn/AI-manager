@@ -74,7 +74,7 @@ export async function upsertPayrollEntryForShift(shift: Shift): Promise<PayrollE
         level: EventLevel.FINANCE,
         message: `Payroll entry ${entry.id} created for shift ${shift.id}`,
         userId: shift.assignedUserId,
-        metadata: JSON.stringify({ payrollEntryId: entry.id, shiftId: shift.id, totalAmount: entry.totalAmount }),
+        metadata: { payrollEntryId: entry.id, shiftId: shift.id, totalAmount: entry.totalAmount } as never,
       },
     });
   }
@@ -112,7 +112,7 @@ export async function markPayment(input: { user: User; amount: number; actorId: 
         level: EventLevel.FINANCE,
         message: `Payment ${payment.id} marked for user ${input.user.id}`,
         userId: input.actorId,
-        metadata: JSON.stringify({ paymentId: payment.id, targetUserId: input.user.id, amount: payment.amount, paidEntryIds }),
+        metadata: { paymentId: payment.id, targetUserId: input.user.id, amount: payment.amount, paidEntryIds } as never,
       },
     });
 
