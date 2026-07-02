@@ -54,10 +54,10 @@ export function parseYesNo(text: string): boolean | null {
   return null;
 }
 
-export async function findActiveEmployeeByTelegramId(rawTelegramId: string): Promise<User | null> {
+export async function findActiveTaskAssigneeByTelegramId(rawTelegramId: string): Promise<User | null> {
   if (!/^\d+$/.test(rawTelegramId)) return null;
   const user = await prisma.user.findUnique({ where: { telegramId: BigInt(rawTelegramId) } });
-  if (!user || user.status !== UserStatus.ACTIVE || user.role !== Role.EMPLOYEE) return null;
+  if (!user || user.status !== UserStatus.ACTIVE || ![Role.EMPLOYEE, Role.MANAGER].includes(user.role as Role)) return null;
   return user;
 }
 

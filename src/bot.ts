@@ -7,7 +7,7 @@ import { roleBasedMenu } from './menu.js';
 import { formatMoney, formatPayrollEntry, markPayment, parseMarkPaidCommand, parseSetSalesCommand, syncPayrollEntries, upsertPayrollEntryForShift } from './payroll.js';
 import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto, createShiftReportAndClose, formatShiftReport, normalizeReportComment, parseGuestsCount, parseYesNo } from './shifts.js';
 import { canResolveIncidents, canViewAllIncidents, createIncident, formatIncident, formatIncidentCategoryPrompt, normalizeIncidentDescription, parseIncidentCategory, parseIncidentIdFromText, type PendingIncident, resolveIncident } from './incidents.js';
-import { canConfirmTasks, canCreateTasks, canViewAllTasks, createTask, findActiveEmployeeByTelegramId, formatTask, normalizeOptionalText, parseDueAt, parseTaskIdFromText, parseYesNo as parseTaskYesNo, type PendingTask, type PendingTaskPhoto, updateTaskStatus } from './tasks.js';
+import { canConfirmTasks, canCreateTasks, canViewAllTasks, createTask, findActiveTaskAssigneeByTelegramId, formatTask, normalizeOptionalText, parseDueAt, parseTaskIdFromText, parseYesNo as parseTaskYesNo, type PendingTask, type PendingTaskPhoto, updateTaskStatus } from './tasks.js';
 
 type PendingShiftPhoto = {
   shiftId: number;
@@ -631,8 +631,8 @@ export function createBot(token: string): Telegraf<BotContext> {
           pendingTasks.set(ctx.appUser.id, { ...pendingTask, assigneeId: null, step: 'dueAt' });
           return ctx.reply('Шаг 4/5: отправьте срок в формате YYYY-MM-DD HH:mm или "-" без срока.');
         }
-        const assignee = await findActiveEmployeeByTelegramId(raw);
-        if (!assignee) return ctx.reply('Активный сотрудник не найден. Отправьте Telegram ID активного EMPLOYEE или "-".');
+        const assignee = await findActiveTaskAssigneeByTelegramId(raw);
+        if (!assignee) return ctx.reply('Активный сотрудник или управляющий не найден.');
         pendingTasks.set(ctx.appUser.id, { ...pendingTask, assigneeId: assignee.id, step: 'dueAt' });
         return ctx.reply('Шаг 4/5: отправьте срок в формате YYYY-MM-DD HH:mm или "-" без срока.');
       }
