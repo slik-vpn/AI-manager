@@ -50,7 +50,7 @@ type LogEventInput = {
   level: EventLevel;
   message: string;
   userId?: number;
-  metadata?: unknown;
+  metadata?: object;
 };
 
 export async function logEvent({ type, level, message, userId, metadata }: LogEventInput): Promise<void> {
@@ -60,9 +60,13 @@ export async function logEvent({ type, level, message, userId, metadata }: LogEv
       level,
       message,
       userId,
-      metadata: metadata === undefined ? undefined : JSON.parse(JSON.stringify(metadata)),
+      metadata: metadata === undefined ? undefined : JSON.stringify(metadata),
     },
   });
+}
+
+export function parseEventMetadata(metadata: string | null): unknown {
+  return metadata === null ? null : JSON.parse(metadata);
 }
 
 export function canManageUsers(user?: User): boolean {

@@ -17,7 +17,7 @@ CREATE TABLE "EventLog" (
     "type" TEXT NOT NULL,
     "level" TEXT NOT NULL,
     "message" TEXT NOT NULL,
-    "metadata" JSONB,
+    "metadata" TEXT,
     "userId" INTEGER,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "EventLog_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
