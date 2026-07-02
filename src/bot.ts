@@ -8,6 +8,7 @@ import { formatMoney, formatPayrollEntry, markPayment, parseMarkPaidCommand, par
 import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto, createShiftReportAndClose, formatShiftReport, normalizeReportComment, parseGuestsCount, parseYesNo } from './shifts.js';
 import { canResolveIncidents, canViewAllIncidents, createIncident, formatIncident, formatIncidentCategoryPrompt, normalizeIncidentDescription, parseIncidentCategory, parseIncidentIdFromText, type PendingIncident, resolveIncident } from './incidents.js';
 import { canConfirmTasks, canCreateTasks, canViewAllTasks, createTask, findActiveTaskAssigneeByTelegramId, formatTask, normalizeOptionalText, parseDueAt, parseTaskIdFromText, parseYesNo as parseTaskYesNo, type PendingTask, type PendingTaskPhoto, updateTaskStatus } from './tasks.js';
+import { fetchYClientsBookings, fetchYClientsSales, formatYClientsItems, getYClientsConfig } from './yclients.js';
 
 type PendingShiftPhoto = {
   shiftId: number;
@@ -341,6 +342,73 @@ export function createBot(token: string): Telegraf<BotContext> {
     await ctx.reply(`Выплата #${result.paymentId} отмечена на сумму ${formatMoney(args.amount)} для ${user.telegramId.toString()}. Закрыто начислений: ${result.paidEntryIds.length}.`);
   });
 
+  bot.command('yclients_status', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (ctx.appUser?.role !== Role.OWNER) return ctx.reply('Только OWNER может проверять YClients.');
+
+    const yclientsConfig = getYClientsConfig();
+    await logEvent({
+      type: EventType.YCLIENTS_STATUS_CHECKED,
+      level: EventLevel.INFO,
+      message: 'YClients status checked',
+      userId: ctx.appUser.id,
+      metadata: { configured: yclientsConfig.isConfigured, missing: yclientsConfig.missing },
+    });
+
+    if (!yclientsConfig.isConfigured) {
+      return ctx.reply(`YClients не подключен. Не настроены переменные: ${yclientsConfig.missing.join(', ')}.`);
+    }
+
+    return ctx.reply([
+      'YClients подключен.',
+      `Company ID: ${yclientsConfig.companyId}`,
+      `User token: ${yclientsConfig.userToken ? 'настроен' : 'не настроен (optional)'}`,
+      'Автосоздание смен отключено.',
+    ].join('\n'));
+  });
+
+  bot.command('yclients_bookings', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (ctx.appUser?.role !== Role.OWNER) return ctx.reply('Только OWNER может смотреть бронирования YClients.');
+
+    const yclientsConfig = getYClientsConfig();
+    if (!yclientsConfig.isConfigured) {
+      await logEvent({ type: EventType.YCLIENTS_ERROR, level: EventLevel.WARNING, message: 'YClients bookings requested without config', userId: ctx.appUser.id, metadata: { missing: yclientsConfig.missing } });
+      return ctx.reply(`YClients не подключен. Не настроены переменные: ${yclientsConfig.missing.join(', ')}.`);
+    }
+
+    try {
+      const bookings = await fetchYClientsBookings();
+      await logEvent({ type: EventType.YCLIENTS_BOOKINGS_FETCHED, level: EventLevel.INFO, message: 'YClients bookings fetched', userId: ctx.appUser.id, metadata: { count: bookings.length } });
+      return ctx.reply(['Последние записи YClients:', formatYClientsItems(bookings, 'Записей не найдено.')].join('\n'));
+    } catch (error) {
+      await logEvent({ type: EventType.YCLIENTS_ERROR, level: EventLevel.WARNING, message: 'YClients bookings fetch failed', userId: ctx.appUser.id, metadata: { error: error instanceof Error ? error.message : String(error) } });
+      return ctx.reply('Не удалось получить записи YClients. Проверьте токены и настройки интеграции.');
+    }
+  });
+
+  bot.command('yclients_sales', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (ctx.appUser?.role !== Role.OWNER) return ctx.reply('Только OWNER может смотреть продажи YClients.');
+
+    const yclientsConfig = getYClientsConfig();
+    if (!yclientsConfig.isConfigured) {
+      await logEvent({ type: EventType.YCLIENTS_ERROR, level: EventLevel.WARNING, message: 'YClients sales requested without config', userId: ctx.appUser.id, metadata: { missing: yclientsConfig.missing } });
+      return ctx.reply(`YClients не подключен. Не настроены переменные: ${yclientsConfig.missing.join(', ')}.`);
+    }
+
+    try {
+      const sales = await fetchYClientsSales();
+      await logEvent({ type: EventType.YCLIENTS_SALES_FETCHED, level: EventLevel.INFO, message: 'YClients sales fetched', userId: ctx.appUser.id, metadata: { count: sales.length } });
+      return ctx.reply(['Последние продажи YClients:', formatYClientsItems(sales, 'Продаж не найдено.')].join('\n'));
+    } catch (error) {
+      await logEvent({ type: EventType.YCLIENTS_ERROR, level: EventLevel.WARNING, message: 'YClients sales fetch failed', userId: ctx.appUser.id, metadata: { error: error instanceof Error ? error.message : String(error) } });
+      return ctx.reply('Не удалось получить продажи YClients. Проверьте токены и настройки интеграции.');
+    }
+  });
 
   bot.command('create_task', async (ctx) => {
     const blocked = activeOnlyMessage(ctx.appUser);

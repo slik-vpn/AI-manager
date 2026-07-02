@@ -60,6 +60,33 @@ Foundation Telegram-бота для управления SLIK Place.
 
 Статусы смен: `NEW`, `OPEN`, `WAITING_OWNER_CONFIRMATION`, `ASSIGNED`, `STARTED`, `READY`, `COMPLETED`, `CLOSED`, `CANCELLED`. Типы откликов: `TAKE`, `DECLINE`. Типы фото смены: `START`, `READY`, `END`.
 
+
+## Интеграция YClients (read-only foundation)
+
+Интеграция с YClients в этом PR работает только в безопасном режиме чтения: бот умеет проверять настройки, получать последние записи и продажи. Автосоздание смен, webhook, payroll и shift logic не меняются. Автосоздание смен из YClients будет отдельным PR.
+
+Переменные окружения:
+
+```dotenv
+YCLIENTS_API_BASE_URL=https://api.yclients.com/api/v1
+YCLIENTS_PARTNER_TOKEN=replace_with_partner_token
+YCLIENTS_COMPANY_ID=replace_with_company_id
+YCLIENTS_USER_TOKEN=replace_with_user_token_optional
+```
+
+- `YCLIENTS_API_BASE_URL` — базовый URL API YClients.
+- `YCLIENTS_PARTNER_TOKEN` — partner token для API.
+- `YCLIENTS_COMPANY_ID` — ID компании в YClients.
+- `YCLIENTS_USER_TOKEN` — optional user token; если не задан, бот не падает и отправляет запросы только с partner token.
+
+Команды доступны только активному `OWNER`:
+
+- `/yclients_status` — проверяет, настроены ли обязательные переменные YClients, и показывает статус optional user token.
+- `/yclients_bookings` — показывает последние записи YClients в коротком формате.
+- `/yclients_sales` — показывает последние продажи YClients в коротком формате.
+
+Если обязательные переменные окружения не настроены, бот отвечает понятным сообщением `YClients не подключен` и перечисляет недостающие переменные.
+
 ## Быстрый старт
 
 ```bash
@@ -76,6 +103,10 @@ npm run dev
 BOT_TOKEN=123456:replace_with_telegram_bot_token
 DATABASE_URL="file:./data/dev.sqlite"
 OWNER_TELEGRAM_IDS=123456789
+YCLIENTS_API_BASE_URL=https://api.yclients.com/api/v1
+YCLIENTS_PARTNER_TOKEN=replace_with_partner_token
+YCLIENTS_COMPANY_ID=replace_with_company_id
+YCLIENTS_USER_TOKEN=replace_with_user_token_optional
 ```
 
 `OWNER_TELEGRAM_IDS` обязателен, должен содержать минимум один Telegram ID и поддерживает несколько ID через запятую. Каждый ID должен состоять только из цифр.

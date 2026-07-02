@@ -47,6 +47,9 @@ export function roleBasedMenu(user: User): string {
       '/set_sales <shiftId> <amount> — указать продажи по смене',
       '/payroll — зарплаты всех сотрудников',
       '/mark_paid <telegramId> <amount> — отметить выплату',
+      '/yclients_status — проверить подключение YClients',
+      '/yclients_bookings — последние записи YClients',
+      '/yclients_sales — последние продажи YClients',
     );
   }
 
