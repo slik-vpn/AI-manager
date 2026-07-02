@@ -1,11 +1,12 @@
 import { Telegraf } from 'telegraf';
-import { EventLevel, EventType, Role, ShiftPhotoType, ShiftResponseType, ShiftStatus, UserStatus } from './domain.js';
+import { EventLevel, EventType, IncidentStatus, Role, ShiftPhotoType, ShiftResponseType, ShiftStatus, UserStatus } from './domain.js';
 import { prisma } from './db.js';
 import type { BotContext } from './types.js';
 import { activeOnlyMessage, canAssignRoles, canManageUsers, findOrCreateUser, logEvent } from './users.js';
 import { roleBasedMenu } from './menu.js';
 import { formatMoney, formatPayrollEntry, markPayment, parseMarkPaidCommand, parseSetSalesCommand, syncPayrollEntries, upsertPayrollEntryForShift } from './payroll.js';
 import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto, createShiftReportAndClose, formatShiftReport, normalizeReportComment, parseGuestsCount, parseYesNo } from './shifts.js';
+import { canResolveIncidents, canViewAllIncidents, createIncident, formatIncident, formatIncidentCategoryPrompt, normalizeIncidentDescription, parseIncidentCategory, parseIncidentIdFromText, type PendingIncident, resolveIncident } from './incidents.js';
 
 type PendingShiftPhoto = {
   shiftId: number;
@@ -36,6 +37,7 @@ export function createBot(token: string): Telegraf<BotContext> {
   const bot = new Telegraf<BotContext>(token);
   const pendingShiftPhotos = new Map<number, PendingShiftPhoto>();
   const pendingShiftReports = new Map<number, PendingShiftReport>();
+  const pendingIncidents = new Map<number, PendingIncident>();
 
   bot.use(async (ctx, next) => {
     if (ctx.from) {
@@ -337,13 +339,72 @@ export function createBot(token: string): Telegraf<BotContext> {
   });
 
 
+  bot.command('create_incident', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    pendingShiftReports.delete(ctx.appUser.id);
+    pendingIncidents.set(ctx.appUser.id, { step: 'category' });
+    await ctx.reply(formatIncidentCategoryPrompt());
+  });
+
+  bot.command('incidents', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const incidents = await prisma.incident.findMany({
+      where: {
+        status: { in: [IncidentStatus.OPEN, IncidentStatus.IN_PROGRESS] },
+        ...(canViewAllIncidents(ctx.appUser) ? {} : { userId: ctx.appUser.id }),
+      },
+      include: { user: true },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 50,
+    });
+    if (incidents.length === 0) return ctx.reply('Открытых инцидентов нет.');
+
+    await ctx.reply(['Открытые инциденты:', ...incidents.map(formatIncident)].join('\n'));
+  });
+
+  bot.command('resolve_incident', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!canResolveIncidents(ctx.appUser)) return ctx.reply('Только OWNER или MANAGER могут закрывать инциденты.');
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const incidentId = parseIncidentIdFromText(ctx.message.text);
+    if (!incidentId) return ctx.reply('Использование: /resolve_incident <incidentId>');
+
+    const incident = await resolveIncident(incidentId, ctx.appUser);
+    if (!incident) return ctx.reply('Инцидент не найден.');
+
+    await ctx.reply(`Инцидент #${incident.id} переведен в статус ${incident.status}.`);
+  });
+
+
   bot.on('photo', async (ctx) => {
     const blocked = activeOnlyMessage(ctx.appUser);
     if (blocked) return ctx.reply(blocked);
     if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
 
+    const pendingIncident = pendingIncidents.get(ctx.appUser.id);
+    if (pendingIncident?.step === 'photo' && pendingIncident.category && pendingIncident.description) {
+      const photo = ctx.message.photo.at(-1);
+      if (!photo) return ctx.reply('Не удалось получить Telegram file_id фото. Отправьте фото еще раз.');
+      const incident = await createIncident({
+        userId: ctx.appUser.id,
+        category: pendingIncident.category,
+        description: pendingIncident.description,
+        photoFileId: photo.file_id,
+      });
+      pendingIncidents.delete(ctx.appUser.id);
+      return ctx.reply([`Инцидент #${incident.id} создан.`, formatIncident(incident)].join('\n'));
+    }
+
     const pending = pendingShiftPhotos.get(ctx.appUser.id);
-    if (!pending) return ctx.reply('Фото получено, но нет активного запроса. Используйте /start_shift, /ready_shift или /end_shift.');
+    if (!pending) return ctx.reply('Фото получено, но нет активного запроса. Используйте /create_incident, /start_shift, /ready_shift или /end_shift.');
 
     const shift = await prisma.shift.findUnique({ where: { id: pending.shiftId } });
     if (!shift) {
@@ -409,6 +470,34 @@ export function createBot(token: string): Telegraf<BotContext> {
     const blocked = activeOnlyMessage(ctx.appUser);
     if (blocked) return ctx.reply(blocked);
     if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const pendingIncident = pendingIncidents.get(ctx.appUser.id);
+    if (pendingIncident) {
+      if (pendingIncident.step === 'category') {
+        const category = parseIncidentCategory(ctx.message.text);
+        if (!category) return ctx.reply(`Неизвестная категория.
+${formatIncidentCategoryPrompt()}`);
+        pendingIncidents.set(ctx.appUser.id, { step: 'description', category });
+        return ctx.reply('Опишите проблему одним сообщением.');
+      }
+
+      if (pendingIncident.step === 'description') {
+        const description = normalizeIncidentDescription(ctx.message.text);
+        if (!description || !pendingIncident.category) return ctx.reply('Описание не должно быть пустым. Опишите проблему одним сообщением.');
+        pendingIncidents.set(ctx.appUser.id, { ...pendingIncident, description, step: 'photo' });
+        return ctx.reply('Фото необязательно. Отправьте фото сейчас или напишите "-", чтобы создать инцидент без фото.');
+      }
+
+      if (!pendingIncident.category || !pendingIncident.description) {
+        pendingIncidents.delete(ctx.appUser.id);
+        return ctx.reply('Создание инцидента отменено из-за неполных данных. Используйте /create_incident заново.');
+      }
+
+      if (ctx.message.text.trim() !== '-') return ctx.reply('Отправьте фото или напишите "-", чтобы создать инцидент без фото.');
+      const incident = await createIncident({ userId: ctx.appUser.id, category: pendingIncident.category, description: pendingIncident.description });
+      pendingIncidents.delete(ctx.appUser.id);
+      return ctx.reply([`Инцидент #${incident.id} создан.`, formatIncident(incident)].join('\n'));
+    }
 
     const pending = pendingShiftReports.get(ctx.appUser.id);
     if (!pending) return next();
