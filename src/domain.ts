@@ -40,6 +40,22 @@ export enum ShiftPhotoType {
   END = 'END',
 }
 
+export enum IncidentCategory {
+  EQUIPMENT = 'EQUIPMENT',
+  CLIENT = 'CLIENT',
+  CLEANING = 'CLEANING',
+  SAFETY = 'SAFETY',
+  SUPPLY = 'SUPPLY',
+  OTHER = 'OTHER',
+}
+
+export enum IncidentStatus {
+  OPEN = 'OPEN',
+  IN_PROGRESS = 'IN_PROGRESS',
+  RESOLVED = 'RESOLVED',
+  CANCELLED = 'CANCELLED',
+}
+
 export enum EventType {
   USER_REGISTERED = 'USER_REGISTERED',
   USER_APPROVED = 'USER_APPROVED',
@@ -57,4 +73,6 @@ export enum EventType {
   SHIFT_CLOSED = 'SHIFT_CLOSED',
   PAYROLL_CREATED = 'PAYROLL_CREATED',
   PAYMENT_MARKED = 'PAYMENT_MARKED',
+  INCIDENT_CREATED = 'INCIDENT_CREATED',
+  INCIDENT_RESOLVED = 'INCIDENT_RESOLVED',
 }
