@@ -9,6 +9,12 @@ const ownerTelegramIds = rawOwnerTelegramIds
 export const config = {
   botToken: process.env.BOT_TOKEN ?? '',
   ownerTelegramIds,
+  yclients: {
+    apiBaseUrl: process.env.YCLIENTS_API_BASE_URL ?? '',
+    partnerToken: process.env.YCLIENTS_PARTNER_TOKEN ?? '',
+    companyId: process.env.YCLIENTS_COMPANY_ID ?? '',
+    userToken: process.env.YCLIENTS_USER_TOKEN ?? '',
+  },
 };
 
 export function assertConfig(): void {
