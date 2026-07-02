@@ -1,5 +1,5 @@
 import { Telegraf } from 'telegraf';
-import { EventLevel, EventType, IncidentStatus, Role, ShiftPhotoType, ShiftResponseType, ShiftStatus, UserStatus } from './domain.js';
+import { EventLevel, EventType, IncidentStatus, Role, ShiftPhotoType, ShiftResponseType, ShiftStatus, TaskStatus, UserStatus } from './domain.js';
 import { prisma } from './db.js';
 import type { BotContext } from './types.js';
 import { activeOnlyMessage, canAssignRoles, canManageUsers, findOrCreateUser, logEvent } from './users.js';
@@ -7,6 +7,7 @@ import { roleBasedMenu } from './menu.js';
 import { formatMoney, formatPayrollEntry, markPayment, parseMarkPaidCommand, parseSetSalesCommand, syncPayrollEntries, upsertPayrollEntryForShift } from './payroll.js';
 import { assignShift, assignShiftArgsFromText, canAssignShifts, canCreateShifts, createShift, createShiftResponse, endOfCurrentWeek, eventTypeAfterPhoto, expectedStatusBeforePhoto, formatResponse, formatShift, parseCreateShiftCommand, shiftIdFromText, shiftPhotoPrompt, shiftPhotoSavedMessage, startOfCurrentWeek, statusAfterPhoto, createShiftReportAndClose, formatShiftReport, normalizeReportComment, parseGuestsCount, parseYesNo } from './shifts.js';
 import { canResolveIncidents, canViewAllIncidents, createIncident, formatIncident, formatIncidentCategoryPrompt, normalizeIncidentDescription, parseIncidentCategory, parseIncidentIdFromText, type PendingIncident, resolveIncident } from './incidents.js';
+import { canConfirmTasks, canCreateTasks, canViewAllTasks, createTask, findActiveTaskAssigneeByTelegramId, formatTask, normalizeOptionalText, parseDueAt, parseTaskIdFromText, parseYesNo as parseTaskYesNo, type PendingTask, type PendingTaskPhoto, updateTaskStatus } from './tasks.js';
 
 type PendingShiftPhoto = {
   shiftId: number;
@@ -38,6 +39,8 @@ export function createBot(token: string): Telegraf<BotContext> {
   const pendingShiftPhotos = new Map<number, PendingShiftPhoto>();
   const pendingShiftReports = new Map<number, PendingShiftReport>();
   const pendingIncidents = new Map<number, PendingIncident>();
+  const pendingTasks = new Map<number, PendingTask>();
+  const pendingTaskPhotos = new Map<number, PendingTaskPhoto>();
 
   bot.use(async (ctx, next) => {
     if (ctx.from) {
@@ -339,6 +342,122 @@ export function createBot(token: string): Telegraf<BotContext> {
   });
 
 
+  bot.command('create_task', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!canCreateTasks(ctx.appUser)) return ctx.reply('Только OWNER или MANAGER могут создавать задачи.');
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    pendingShiftReports.delete(ctx.appUser.id);
+    pendingIncidents.delete(ctx.appUser.id);
+    pendingTasks.set(ctx.appUser.id, { step: 'title' });
+    await ctx.reply('Создание задачи начато. Шаг 1/5: отправьте название задачи.');
+  });
+
+  bot.command('tasks', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const tasks = await prisma.task.findMany({
+      where: {
+        status: { in: [TaskStatus.OPEN, TaskStatus.IN_PROGRESS, TaskStatus.WAITING_CONFIRMATION] },
+        ...(canViewAllTasks(ctx.appUser) ? {} : { assigneeId: ctx.appUser.id }),
+      },
+      include: { assignee: true, createdBy: true },
+      orderBy: [{ dueAt: 'asc' }, { createdAt: 'desc' }],
+      take: 50,
+    });
+    if (tasks.length === 0) return ctx.reply('Открытых задач нет.');
+
+    await ctx.reply(['Открытые задачи:', ...tasks.map(formatTask)].join('\n'));
+  });
+
+  bot.command('my_tasks', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const tasks = await prisma.task.findMany({
+      where: { assigneeId: ctx.appUser.id },
+      include: { assignee: true, createdBy: true },
+      orderBy: [{ dueAt: 'asc' }, { createdAt: 'desc' }],
+      take: 50,
+    });
+    if (tasks.length === 0) return ctx.reply('У вас нет назначенных задач.');
+
+    await ctx.reply(['Мои задачи:', ...tasks.map(formatTask)].join('\n'));
+  });
+
+  bot.command('start_task', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const taskId = parseTaskIdFromText(ctx.message.text);
+    if (!taskId) return ctx.reply('Использование: /start_task <taskId>');
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return ctx.reply('Задача не найдена.');
+    if (task.assigneeId !== ctx.appUser.id) return ctx.reply('Эта задача назначена другому сотруднику.');
+    if (task.status !== TaskStatus.OPEN) return ctx.reply(`Задачу нельзя начать в статусе ${task.status}.`);
+
+    const updated = await updateTaskStatus(task, TaskStatus.IN_PROGRESS, ctx.appUser, EventType.TASK_STARTED);
+    await ctx.reply(`Задача #${updated.id} переведена в статус ${updated.status}.`);
+  });
+
+  bot.command('complete_task', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const taskId = parseTaskIdFromText(ctx.message.text);
+    if (!taskId) return ctx.reply('Использование: /complete_task <taskId>');
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return ctx.reply('Задача не найдена.');
+    if (task.assigneeId !== ctx.appUser.id) return ctx.reply('Эта задача назначена другому сотруднику.');
+    if (![TaskStatus.OPEN, TaskStatus.IN_PROGRESS].includes(task.status as TaskStatus)) return ctx.reply(`Задачу нельзя завершить в статусе ${task.status}.`);
+    if (task.requiresPhoto && !task.photoFileId) {
+      pendingTaskPhotos.set(ctx.appUser.id, { taskId: task.id });
+      return ctx.reply(`Для завершения задачи #${task.id} требуется фото. Отправьте фото одним сообщением.`);
+    }
+
+    const updated = await updateTaskStatus(task, TaskStatus.WAITING_CONFIRMATION, ctx.appUser, EventType.TASK_COMPLETED);
+    await ctx.reply(`Задача #${updated.id} ожидает подтверждения OWNER/MANAGER.`);
+  });
+
+  bot.command('confirm_task', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!canConfirmTasks(ctx.appUser)) return ctx.reply('Только OWNER или MANAGER могут подтверждать задачи.');
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const taskId = parseTaskIdFromText(ctx.message.text);
+    if (!taskId) return ctx.reply('Использование: /confirm_task <taskId>');
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return ctx.reply('Задача не найдена.');
+    if (task.status !== TaskStatus.WAITING_CONFIRMATION) return ctx.reply(`Подтвердить можно только задачу в статусе ${TaskStatus.WAITING_CONFIRMATION}. Текущий статус: ${task.status}.`);
+
+    const updated = await updateTaskStatus(task, TaskStatus.DONE, ctx.appUser, EventType.TASK_CONFIRMED);
+    await ctx.reply(`Задача #${updated.id} подтверждена и закрыта.`);
+  });
+
+  bot.command('cancel_task', async (ctx) => {
+    const blocked = activeOnlyMessage(ctx.appUser);
+    if (blocked) return ctx.reply(blocked);
+    if (!canConfirmTasks(ctx.appUser)) return ctx.reply('Только OWNER или MANAGER могут отменять задачи.');
+    if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const taskId = parseTaskIdFromText(ctx.message.text);
+    if (!taskId) return ctx.reply('Использование: /cancel_task <taskId>');
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return ctx.reply('Задача не найдена.');
+    if (task.status === TaskStatus.DONE || task.status === TaskStatus.CANCELLED) return ctx.reply(`Задача уже в финальном статусе ${task.status}.`);
+
+    const updated = await updateTaskStatus(task, TaskStatus.CANCELLED, ctx.appUser, EventType.TASK_CANCELLED);
+    await ctx.reply(`Задача #${updated.id} отменена.`);
+  });
+
+
   bot.command('create_incident', async (ctx) => {
     const blocked = activeOnlyMessage(ctx.appUser);
     if (blocked) return ctx.reply(blocked);
@@ -403,8 +522,31 @@ export function createBot(token: string): Telegraf<BotContext> {
       return ctx.reply([`Инцидент #${incident.id} создан.`, formatIncident(incident)].join('\n'));
     }
 
+    const pendingTaskPhoto = pendingTaskPhotos.get(ctx.appUser.id);
+    if (pendingTaskPhoto) {
+      const task = await prisma.task.findUnique({ where: { id: pendingTaskPhoto.taskId } });
+      if (!task) {
+        pendingTaskPhotos.delete(ctx.appUser.id);
+        return ctx.reply('Задача не найдена. Запрос фото отменен.');
+      }
+      if (task.assigneeId !== ctx.appUser.id) {
+        pendingTaskPhotos.delete(ctx.appUser.id);
+        return ctx.reply('Эта задача назначена другому сотруднику. Фото не сохранено.');
+      }
+      if (![TaskStatus.OPEN, TaskStatus.IN_PROGRESS].includes(task.status as TaskStatus)) {
+        pendingTaskPhotos.delete(ctx.appUser.id);
+        return ctx.reply(`Фото не сохранено: задача сейчас в статусе ${task.status}.`);
+      }
+      const photo = ctx.message.photo.at(-1);
+      if (!photo) return ctx.reply('Не удалось получить Telegram file_id фото. Отправьте фото еще раз.');
+      const withPhoto = await prisma.task.update({ where: { id: task.id }, data: { photoFileId: photo.file_id } });
+      const updated = await updateTaskStatus(withPhoto, TaskStatus.WAITING_CONFIRMATION, ctx.appUser, EventType.TASK_COMPLETED);
+      pendingTaskPhotos.delete(ctx.appUser.id);
+      return ctx.reply(`Фото сохранено. Задача #${updated.id} ожидает подтверждения OWNER/MANAGER.`);
+    }
+
     const pending = pendingShiftPhotos.get(ctx.appUser.id);
-    if (!pending) return ctx.reply('Фото получено, но нет активного запроса. Используйте /create_incident, /start_shift, /ready_shift или /end_shift.');
+    if (!pending) return ctx.reply('Фото получено, но нет активного запроса. Используйте /create_incident, /complete_task, /start_shift, /ready_shift или /end_shift.');
 
     const shift = await prisma.shift.findUnique({ where: { id: pending.shiftId } });
     if (!shift) {
@@ -470,6 +612,54 @@ export function createBot(token: string): Telegraf<BotContext> {
     const blocked = activeOnlyMessage(ctx.appUser);
     if (blocked) return ctx.reply(blocked);
     if (!ctx.appUser) return ctx.reply('Нажмите /start для регистрации.');
+
+    const pendingTask = pendingTasks.get(ctx.appUser.id);
+    if (pendingTask) {
+      if (pendingTask.step === 'title') {
+        const title = normalizeOptionalText(ctx.message.text);
+        if (!title) return ctx.reply('Название не должно быть пустым. Отправьте название задачи.');
+        pendingTasks.set(ctx.appUser.id, { ...pendingTask, title, step: 'description' });
+        return ctx.reply('Шаг 2/5: отправьте описание задачи или "-", если описание не нужно.');
+      }
+      if (pendingTask.step === 'description') {
+        pendingTasks.set(ctx.appUser.id, { ...pendingTask, description: normalizeOptionalText(ctx.message.text), step: 'assignee' });
+        return ctx.reply('Шаг 3/5: отправьте Telegram ID сотрудника для назначения или "-" без исполнителя.');
+      }
+      if (pendingTask.step === 'assignee') {
+        const raw = ctx.message.text.trim();
+        if (raw === '-') {
+          pendingTasks.set(ctx.appUser.id, { ...pendingTask, assigneeId: null, step: 'dueAt' });
+          return ctx.reply('Шаг 4/5: отправьте срок в формате YYYY-MM-DD HH:mm или "-" без срока.');
+        }
+        const assignee = await findActiveTaskAssigneeByTelegramId(raw);
+        if (!assignee) return ctx.reply('Активный сотрудник или управляющий не найден.');
+        pendingTasks.set(ctx.appUser.id, { ...pendingTask, assigneeId: assignee.id, step: 'dueAt' });
+        return ctx.reply('Шаг 4/5: отправьте срок в формате YYYY-MM-DD HH:mm или "-" без срока.');
+      }
+      if (pendingTask.step === 'dueAt') {
+        const dueAt = parseDueAt(ctx.message.text);
+        if (dueAt === undefined) return ctx.reply('Не удалось распознать дату. Используйте YYYY-MM-DD HH:mm или "-".');
+        pendingTasks.set(ctx.appUser.id, { ...pendingTask, dueAt, step: 'requiresPhoto' });
+        return ctx.reply('Шаг 5/5: требуется фото для завершения? Ответьте да/нет.');
+      }
+      const requiresPhoto = parseTaskYesNo(ctx.message.text);
+      if (requiresPhoto === null) return ctx.reply('Ответьте "да" или "нет": требуется фото для завершения?');
+      if (!pendingTask.title) {
+        pendingTasks.delete(ctx.appUser.id);
+        return ctx.reply('Создание задачи отменено из-за неполных данных. Используйте /create_task заново.');
+      }
+      const task = await createTask({
+        title: pendingTask.title,
+        description: pendingTask.description,
+        assigneeId: pendingTask.assigneeId,
+        createdById: ctx.appUser.id,
+        dueAt: pendingTask.dueAt,
+        requiresPhoto,
+      });
+      pendingTasks.delete(ctx.appUser.id);
+      const created = await prisma.task.findUnique({ where: { id: task.id }, include: { assignee: true, createdBy: true } });
+      return ctx.reply([`Задача #${task.id} создана.`, formatTask(created ?? task)].join('\n'));
+    }
 
     const pendingIncident = pendingIncidents.get(ctx.appUser.id);
     if (pendingIncident) {
