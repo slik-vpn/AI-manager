@@ -17,6 +17,10 @@ export function roleBasedMenu(user: User): string {
     '/ready_shift <shiftId> — отправить фото готовности площадки',
     '/end_shift <shiftId> — отправить фото конца смены',
     '/report_shift <shiftId> — заполнить отчет после завершения смены',
+    '/tasks — открытые задачи',
+    '/my_tasks — мои назначенные задачи',
+    '/start_task <taskId> — начать задачу',
+    '/complete_task <taskId> — завершить задачу',
     '/create_incident — создать инцидент',
     '/incidents — открытые инциденты',
     '/my_payroll — моя зарплата по закрытым сменам',
@@ -27,6 +31,9 @@ export function roleBasedMenu(user: User): string {
       '/users — список пользователей',
       '/approve <telegramId> — подтвердить пользователя',
       '/create_shift YYYY-MM-DD HH:mm HH:mm Название смены — создать смену',
+      '/create_task — создать задачу',
+      '/confirm_task <taskId> — подтвердить задачу',
+      '/cancel_task <taskId> — отменить задачу',
       '/resolve_incident <incidentId> — закрыть инцидент',
     );
   }
