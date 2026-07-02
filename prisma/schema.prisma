@@ -31,7 +31,7 @@ model EventLog {
   type      String
   level     String
   message   String
-  metadata  Json?
+  metadata  String?
   userId    Int?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt DateTime @default(now())

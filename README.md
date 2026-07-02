@@ -18,6 +18,7 @@ Foundation Telegram-бота для управления SLIK Place.
 - Уровни событий: `INFO`, `WARNING`, `ALERT`, `FINANCE`.
 - Типы событий: `USER_REGISTERED`, `USER_APPROVED`, `ROLE_CHANGED`, `BOT_STARTED`, `BOT_ERROR`, `SHIFT_CREATED`, `SHIFT_RESPONSE_CREATED`, `SHIFT_ASSIGNED`, `SHIFT_STARTED`, `SHIFT_READY`, `SHIFT_COMPLETED`, `SHIFT_PHOTO_ADDED`, `SHIFT_REPORT_CREATED`, `SHIFT_CLOSED`.
 - Модели Prisma: `User`, `EventLog`, `Shift`, `ShiftResponse`, `ShiftPhoto`, `ShiftReport`.
+- `EventLog.metadata` хранится в SQLite как `String`, потому что текущая Prisma-схема для SQLite не использует `Json`; в коде metadata передается как объект и сериализуется перед записью.
 - Команды Telegram:
   - `/start` — регистрация и меню по роли.
   - `/me` — профиль текущего пользователя.
